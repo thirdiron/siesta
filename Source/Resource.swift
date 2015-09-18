@@ -114,10 +114,10 @@ public final class Resource: NSObject
     public var requesting: Bool { return !allRequests.isEmpty }
     
     /// All load requests in progress, in the order they were initiated.
-    public private(set) var loadRequests = [Request]()
+    private var loadRequests = [Request]()
 
     /// All requests in progress related to this resource, in the order they were initiated.
-    public private(set) var allRequests = [Request]()  // TOOD: Any special handling for concurrent POST & GET?
+    private var allRequests = [Request]()  // TOOD: Any special handling for concurrent POST & GET?
     
     // MARK: -
     

@@ -21,8 +21,7 @@ class ResourceRequestsSpec: ResourceSpecBase
             expect(resource().latestError).to(beNil())
             
             expect(resource().loading).to(beFalse())
-            expect(resource().allRequests).to(beIdentialObjects([]))
-            expect(resource().loadRequests).to(beIdentialObjects([]))
+            expect(resource().requesting).to(beFalse())
             }
         
         describe("request()")
@@ -152,17 +151,14 @@ class ResourceRequestsSpec: ResourceSpecBase
                     (reqStub1, req1) = stubDelayedAndRequest("one")
                 
                 expect(resource().requesting).to(beTrue())
-                expect(resource().allRequests).to(beIdentialObjects([req0, req1]))
                 
                 reqStub0.go()
                 awaitNewData(req0)
                 expect(resource().requesting).to(beTrue())
-                expect(resource().allRequests).to(beIdentialObjects([req1]))
                 
                 reqStub1.go()
                 awaitNewData(req1)
                 expect(resource().loading).to(beFalse())
-                expect(resource().allRequests).to(beIdentialObjects([]))
                 }
             
             context("POST/PUT/PATCH body")
@@ -911,7 +907,8 @@ class ResourceRequestsSpec: ResourceSpecBase
                 
                 stub.go()
                 awaitFailure(otherResourceReq, alreadyCompleted: true)
-                expect(resource().loadRequests.count).to(equal(0))
+                expect(resource().loading).to(beFalse())
+                expect(resource().requesting).to(beFalse())
                 }
             }
         }
