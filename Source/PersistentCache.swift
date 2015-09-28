@@ -40,7 +40,7 @@ public protocol EntityCache
       
       The method may be called on a background thread. Make sure your implementation is threadsafe.
     */
-    func readEntity(forKey key: String) -> Entity?
+    func readEntity(forKey key: String) -> Entity<Any>?
     
     /**
       Store the given entity in the cache, associated with the given key. The key’s format is arbitrary, and internal
@@ -53,7 +53,7 @@ public protocol EntityCache
       
       The method may be called on a background thread. Make sure your implementation is threadsafe.
     */
-    func writeEntity(entity: Entity, forKey key: String)
+    func writeEntity(entity: Entity<Any>, forKey key: String)
     }
 
 
@@ -64,12 +64,14 @@ public protocol EntityCache
 */
 public protocol EntityEncoder
     {
+    typealias ContentType
+    
     /// Returns entity, including all of its metadata, serialized as raw data. Returns nil if this encoder does not know
     /// how to encode the entity.
-    func encodeEntity(entity: Entity) -> NSData?
+    func encodeEntity(entity: Entity<Any>) -> NSData?
     
     /// Decodes the data as an entity. Returns nil if the decoding fails for any reason.
-    func decodeEntity(data: NSData) -> Entity?
+    func decodeEntity(data: NSData) -> Entity<Any>?
     }
 
 /**
@@ -86,9 +88,10 @@ public struct JSONEntityEncoder: EntityEncoder
     public init() { }
     
     /// Encodes the entity iff its `content` is a valid JSON object.
-    public func encodeEntity(entity: Entity) -> NSData?
+    public func encodeEntity(entity: Entity<Any>) -> NSData?
         {
-        guard let obj = entity.content as? AnyObject where NSJSONSerialization.isValidJSONObject(obj) else
+        guard let obj = entity.untypedContent as? NSJSONConvertible
+            where NSJSONSerialization.isValidJSONObject(obj) else
             { return nil }
         
         let json = NSMutableDictionary()
@@ -102,14 +105,14 @@ public struct JSONEntityEncoder: EntityEncoder
         }
     
     /// Decodes an entity with JSON content.
-    public func decodeEntity(data: NSData) -> Entity?
+    public func decodeEntity(data: NSData) -> Entity<NSJSONConvertible>?
         {
         let decoded: AnyObject
         do { decoded = try NSJSONSerialization.JSONObjectWithData(data, options: []) }
         catch { return nil }
         
         guard let json = decoded as? NSDictionary,
-                  content   = json["content"],
+                  content   = json["content"] as? NSJSONConvertible,
                   headers   = json["headers"] as? [String:String],
                   timestamp = json["timestamp"] as? NSTimeInterval
         else { return nil}

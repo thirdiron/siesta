@@ -23,8 +23,7 @@ internal let now = { fakeNow ?? NSDate.timeIntervalSinceReferenceDate() }
   …and allows multiple observer to register to be notified whenever the answers to any of these
   questions changes.
 */
-@objc(BOSResource)
-public final class Resource: NSObject
+public final class Resource<T>: NSObject
     {
     // MARK: Configuration
     
@@ -34,7 +33,7 @@ public final class Resource: NSObject
     /// The canoncial URL of this resource.
     public let url: NSURL
     
-    internal var observers = [ObserverEntry]()
+    internal var observers = [ObserverEntry<T>]()
     
     
     // MARK: Configuration
@@ -76,7 +75,7 @@ public final class Resource: NSObject
  
        - SeeAlso: `DataContainer`
     */
-    public private(set) var latestData: Entity?
+    public private(set) var latestData: Entity<T>?
         {
         didSet { invalidated = false }
         }
@@ -114,10 +113,10 @@ public final class Resource: NSObject
     public var requesting: Bool { return !allRequests.isEmpty }
     
     /// All load requests in progress, in the order they were initiated.
-    private var loadRequests = [Request]()
+    private var loadRequests = [Request<T>]()
 
     /// All requests in progress related to this resource, in the order they were initiated.
-    private var allRequests = [Request]()  // TOOD: Any special handling for concurrent POST & GET?
+    private var allRequests = [Request<T>]()  // TOOD: Any special handling for concurrent POST & GET?
     
     // MARK: -
     
@@ -161,7 +160,7 @@ public final class Resource: NSObject
       
       - SeeAlso: `relative(_:)`
     */
-    public func child(subpath: String) -> Resource
+    public func child<U>(subpath: String) -> Resource<U>
         {
         return service.resource(url: url.URLByAppendingPathComponent(subpath))
         }
@@ -178,7 +177,7 @@ public final class Resource: NSObject
         - `optionalRelative(_:)`
         - `child(_:)`
     */
-    public func relative(href: String) -> Resource
+    public func relative<U>(href: String) -> Resource<U>
         {
         return service.resource(url: NSURL(string: href, relativeToURL: url))
         }
@@ -193,7 +192,7 @@ public final class Resource: NSObject
             // ...
           }
     */
-    public func optionalRelative(href: String?) -> Resource?
+    public func optionalRelative<U>(href: String?) -> Resource<U>?
         {
         if let href = href
             { return relative(href) }
@@ -218,8 +217,8 @@ public final class Resource: NSObject
       Note that _only_ `withParam(_:_:)` does this sorting; if you use other methods to create query strings, it is
       up to you to canonicalize your parameter order.
     */
-    @objc(withParam:value:)
-    public func withParam(name: String, _ value: String?) -> Resource
+//    @objc(withParam:value:)
+    public func withParam<U>(name: String, _ value: String?) -> Resource<U>
         {
         return service.resource(
             url: url.alterQuery
@@ -273,7 +272,7 @@ public final class Resource: NSObject
     public func request(
             method:          RequestMethod,
             requestMutation: NSMutableURLRequest -> () = { _ in })
-        -> Request
+        -> Request<T>
         {
         let nsreq = NSMutableURLRequest(URL: url)
         nsreq.HTTPMethod = method.rawValue
@@ -300,7 +299,7 @@ public final class Resource: NSObject
             data:            NSData,
             contentType:     String,
             requestMutation: NSMutableURLRequest -> () = { _ in })
-        -> Request
+        -> Request<T>
         {
         return request(method)
             {
@@ -328,7 +327,7 @@ public final class Resource: NSObject
             contentType:     String = "text/plain",
             encoding:        NSStringEncoding = NSUTF8StringEncoding,
             requestMutation: NSMutableURLRequest -> () = { _ in })
-        -> Request
+        -> Request<T>
         {
         let encodingName = CFStringConvertEncodingToIANACharSetName(CFStringConvertNSStringEncodingToEncoding(encoding))
         if let rawBody = text.dataUsingEncoding(encoding)
@@ -355,7 +354,7 @@ public final class Resource: NSObject
             json:            NSJSONConvertible,
             contentType:     String = "application/json",
             requestMutation: NSMutableURLRequest -> () = { _ in })
-        -> Request
+        -> Request<T>
         {
         guard NSJSONSerialization.isValidJSONObject(json) else
             {
@@ -390,7 +389,7 @@ public final class Resource: NSObject
             method:            RequestMethod,
             urlEncoded params: [String:String],
             requestMutation:   NSMutableURLRequest -> () = { _ in })
-        -> Request
+        -> Request<T>
         {
         func urlEscape(string: String) -> String
             {
@@ -472,7 +471,7 @@ public final class Resource: NSObject
         - `isUpToDate`
         - `load()`
     */
-    public func loadIfNeeded() -> Request?
+    public func loadIfNeeded() -> Request<T>?
         {
         if let loadReq = loadRequests.first
             {
@@ -502,7 +501,7 @@ public final class Resource: NSObject
          `ResourceEvent.Error`. Note that `latestData` does _not_ become nil; the last valid response always sticks
          around until another valid response arrives.
     */
-    public func load() -> Request
+    public func load() -> Request<T>
         {
         let req = request(.GET)
             {
@@ -530,7 +529,7 @@ public final class Resource: NSObject
             auth.request(
                 .POST, json: ["user": user, "password": pass]))
     */
-    public func load(usingRequest req: Request) -> Request
+    public func load(usingRequest req: Request<T>) -> Request<T>
         {
         trackRequest(req, using: &loadRequests)
         
@@ -574,7 +573,7 @@ public final class Resource: NSObject
             }
         }
 
-    private func trackRequest(req: Request, inout using array: [Request])
+    private func trackRequest(req: Request<T>, inout using array: [Request<T>])
         {
         array.append(req)
         req.completion
@@ -585,10 +584,10 @@ public final class Resource: NSObject
             }
         }
     
-    private func receiveNewDataFromNetwork(entity: Entity)
+    private func receiveNewDataFromNetwork(entity: Entity<T>)
         { receiveNewData(entity, source: .Network) }
     
-    private func receiveNewData(entity: Entity, source: ResourceEvent.NewDataSource)
+    private func receiveNewData(entity: Entity<T>, source: ResourceEvent.NewDataSource)
         {
         debugLog(.StateChanges, [self, "received new data from", source, ":", entity])
         
@@ -674,7 +673,7 @@ public final class Resource: NSObject
       
       - SeeAlso: `localContentOverride(_:)`
     */
-    public func localDataOverride(entity: Entity)
+    public func localDataOverride(entity: Entity<T>)
         { receiveNewData(entity, source: .LocalOverride) }
     
     /**
@@ -682,7 +681,7 @@ public final class Resource: NSObject
       
       If this resource has no content, this method sets the content type to `application/binary`.
     */
-    public func localContentOverride(content: AnyObject)
+    public func localContentOverride(content: T)
         {
         var updatedEntity = latestData ?? Entity(content: content, contentType: "application/binary")
         updatedEntity.content = content
@@ -743,7 +742,7 @@ public final class Resource: NSObject
         debugLog(.Cache, ["Looking for cached data for", url, "in", cache])
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0))
             {
-            guard let entity = cache.readEntity(forKey: url.absoluteString) else
+            guard let entity: Entity<T> = cache.readEntity(forKey: url.absoluteString)?.typecastContent() else
                 { return }
 
             dispatch_async(dispatch_get_main_queue())
@@ -768,7 +767,8 @@ public final class Resource: NSObject
             debugLog(.Cache, ["Caching data for", url, "in", cache])
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0))
                 {
-                cache.writeEntity(entity, forKey: url.absoluteString)
+                if let entity: Entity<Any> = entity.typecastContent()
+                    { cache.writeEntity(entity, forKey: url.absoluteString) }
                 }
             }
         }
@@ -792,3 +792,28 @@ public final class Resource: NSObject
 public protocol NSJSONConvertible: AnyObject { }
 extension NSDictionary: NSJSONConvertible { }
 extension NSArray:      NSJSONConvertible { }
+
+public protocol AnyResource: class
+    {
+    var service: Service { get }
+    var url: NSURL { get }
+
+    var latestError: Error? { get }
+    var config: Siesta.Configuration { get }
+    var timestamp: NSTimeInterval { get }
+    var loading: Bool { get }
+    var requesting: Bool { get }
+    //func loadIfNeeded<T>() -> Request<T>?
+    //func load() -> Request
+    //func load(usingRequest req: Request) -> Request
+    //func cancelLoadIfUnobserved()
+    //func cancelLoadIfUnobserved(afterDelay delay: NSTimeInterval, callback: Void -> Void = default)
+    //func localDataOverride(entity: Entity<T>)
+    //func localContentOverride(content: T)
+    //func invalidate()
+    //func wipe()
+    }
+
+extension Resource: AnyResource
+    {
+    }

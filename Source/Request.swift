@@ -47,28 +47,36 @@ public enum RequestMethod: String
   
   Callbacks are always called on the main queue.
 */
-public protocol Request: AnyObject
+public class Request<ContentType>: AnyObject
     {
+    private init() { }
+    
     /// Call the closure once when the request finishes for any reason.
-    func completion(callback: Response -> Void) -> Self
+    func completion(callback: Response<ContentType> -> Void) -> Self
+        { fatalError("abstract method") }
     
     /// Call the closure once if the request succeeds.
-    func success(callback: Entity -> Void) -> Self
+    func success(callback: Entity<ContentType> -> Void) -> Self
+        { fatalError("abstract method") }
     
     /// Call the closure once if the request succeeds and the data changed.
-    func newData(callback: Entity -> Void) -> Self
+    func newData(callback: Entity<ContentType> -> Void) -> Self
+        { fatalError("abstract method") }
     
     /// Call the closure once if the request succeeds with a 304.
     func notModified(callback: Void -> Void) -> Self
+        { fatalError("abstract method") }
 
     /// Call the closure once if the request fails for any reason.
     func failure(callback: Error -> Void) -> Self
+        { fatalError("abstract method") }
     
     /**
       True if the request has received and handled a server response, encountered a pre-request client-side side error,
       or been cancelled.
     */
-    var completed: Bool { get }
+    var completed: Bool
+        { fatalError("abstract method") }
     
     /**
       Cancel the request if it is still in progress. Has no effect if a response has already been received.
@@ -85,16 +93,17 @@ public protocol Request: AnyObject
       ignored and not trigger any callbacks.
     */
     func cancel()
+        { fatalError("abstract method") }
     }
 
 /**
   The outcome of a network request: either success (with an entity representing the resource’s current state), or
   failure (with an error).
 */
-public enum Response: CustomStringConvertible
+public enum Response<T>: CustomStringConvertible
     {
     /// The request succeeded, and returned the given entity.
-    case Success(Entity)
+    case Success(Entity<T>)
     
     /// The request failed because of the given error.
     case Failure(Error)
@@ -119,13 +128,18 @@ public enum Response: CustomStringConvertible
         }
     }
 
-private typealias ResponseInfo = (response: Response, isNew: Bool)
-private typealias ResponseCallback = ResponseInfo -> Void
-
-internal final class NetworkRequest: Request, CustomDebugStringConvertible
+private struct ResponseInfo<T>
     {
+    var response: Response<T>
+    var isNew: Bool
+    }
+
+internal final class NetworkRequest<T>: Request<T>, CustomDebugStringConvertible
+    {
+    private typealias ResponseCallback = ResponseInfo<T> -> Void
+    
     // Basic metadata
-    private let resource: Resource
+    private let resource: Resource<T>
     private let requestDescription: String
     
     // Networking
@@ -133,14 +147,14 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
     internal var networking: RequestNetworking?  // present only after start()
     
     // Result
-    private var responseInfo: ResponseInfo?
+    private var responseInfo: ResponseInfo<T>?
     internal var underlyingNetworkRequestCompleted = false      // so tests can wait for it to finish
-    internal var completed: Bool { return responseInfo != nil }
+    override internal var completed: Bool { return responseInfo != nil }
     
     // Callbacks
     private var responseCallbacks: [ResponseCallback] = []
 
-    init(resource: Resource, nsreq: NSURLRequest)
+    init(resource: Resource<T>, nsreq: NSURLRequest)
         {
         self.resource = resource
         self.nsreq = nsreq
@@ -171,7 +185,7 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
         return self
         }
     
-    func cancel()
+    override func cancel()
         {
         guard !completed else
             {
@@ -186,64 +200,58 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
         // Prevent start() from have having any effect if it hasn't been called yet
         nsreq = nil
 
-        broadcastResponse((
-            response: .Failure(Error(
-                userMessage: "Request cancelled",
-                error: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled, userInfo: nil))),
-            isNew: true))
+        broadcastResponse(
+            ResponseInfo(
+                response: .Failure(Error(
+                    userMessage: "Request cancelled",
+                    error: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled, userInfo: nil))),
+                isNew: true))
         }
     
     // MARK: Callbacks
 
-    func completion(callback: Response -> Void) -> Self
+    override func completion(callback: Response<T> -> Void) -> Self
         {
         addResponseCallback
-            {
-            response, _ in
-            callback(response)
-            }
+            { callback($0.response) }
         return self
         }
     
-    func success(callback: Entity -> Void) -> Self
+    override func success(callback: Entity<T> -> Void) -> Self
         {
         addResponseCallback
             {
-            response, _ in
-            if case .Success(let entity) = response
+            if case .Success(let entity) = $0.response
                 { callback(entity) }
             }
         return self
         }
     
-    func newData(callback: Entity -> Void) -> Self
+    override func newData(callback: Entity<T> -> Void) -> Self
         {
         addResponseCallback
             {
-            response, isNew in
-            if case .Success(let entity) = response where isNew
+            if case .Success(let entity) = $0.response where $0.isNew
                 { callback(entity) }
             }
         return self
         }
     
-    func notModified(callback: Void -> Void) -> Self
+    override func notModified(callback: Void -> Void) -> Self
         {
         addResponseCallback
             {
-            response, isNew in
-            if case .Success = response where !isNew
+            if case .Success = $0.response where !$0.isNew
                 { callback() }
             }
         return self
         }
     
-    func failure(callback: Error -> Void) -> Self
+    override func failure(callback: Error -> Void) -> Self
         {
         addResponseCallback
             {
-            response, _ in
-            if case .Failure(let error) = response
+            if case .Failure(let error) = $0.response
                 { callback(error) }
             }
         return self
@@ -278,62 +286,89 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
         debugLog(.NetworkDetails, ["Raw response headers:", nsres?.allHeaderFields])
         debugLog(.NetworkDetails, ["Raw response body:", body?.length ?? 0, "bytes"])
         
-        let responseInfo = interpretResponse(nsres, body, nserror)
-
-        if shouldIgnoreResponse(responseInfo.response)
-            { return }
+        let (newResponse, existingResponse) = interpretResponse(nsres, body, nserror)
         
-        transformResponse(responseInfo, then: broadcastResponse)
+        if let existingResponse = existingResponse
+            {
+            broadcastResponse(
+                ResponseInfo(response: existingResponse, isNew: false))
+            }
+        
+        if let newResponse = newResponse
+            {
+            transformResponse(newResponse, then: broadcastResponse)
+            }
         }
     
     private func interpretResponse(nsres: NSHTTPURLResponse?, _ body: NSData?, _ nserror: NSError?)
-        -> ResponseInfo
+        -> (newData: Response<Any>?, existingData: Response<T>?)
         {
         if nsres?.statusCode >= 400 || nserror != nil
             {
-            return (.Failure(Error(nsres, body, nserror)), true)
+            return (.Failure(Error(nsres, body, nserror)), nil)
             }
         else if nsres?.statusCode == 304
             {
             if let entity = resource.latestData
                 {
-                return (.Success(entity), false)
+                return (nil, .Success(entity))
                 }
             else
                 {
-                return(
+                return (
                     .Failure(Error(
                         userMessage: "No data",
                         debugMessage: "Received HTTP 304, but resource has no existing data")),
-                    true)
+                    nil)
                 }
             }
         else if let body = body
             {
-            return (.Success(Entity(nsres, body)), true)
+            let entity = Entity<Any>(response: nsres, content: body)
+            let response: Response<Any> = .Success(entity)
+            return (response, nil)
             }
         else
             {
-            return (.Failure(Error(userMessage: "Empty response")), true)
+            return (.Failure(Error(userMessage: "Empty response")), nil)
             }
         }
     
-    private func transformResponse(rawInfo: ResponseInfo, then afterTransformation: ResponseInfo -> Void)
+    private func transformResponse(raw: Response<Any>, then afterTransformation: ResponseInfo<T> -> Void)
         {
+        if shouldIgnoreResponse(raw)
+            { return }
+        
         let transformer = resource.config.responseTransformers
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0))
             {
-            let processedInfo =
-                rawInfo.isNew
-                    ? (transformer.process(rawInfo.response), true)
-                    : rawInfo
+            let processed = transformer.process(raw)
+            let processedAndTyped: Response<T>
+            switch processed
+                {
+                case let .Success(entity):
+                    if let entityCast: Entity<T> = entity.typecastContent()
+                        { processedAndTyped = .Success(entityCast) }
+                    else
+                        {
+                        processedAndTyped = .Failure(Error(
+                            userMessage: "Unable to parse response",
+                            debugMessage: "Expected \(T.self) but got \(entity.content.dynamicType)",
+                            entity: entity.typecastContent()))
+                        }
+                
+                case let .Failure(error):
+                    processedAndTyped = .Failure(error)
+                }
             
             dispatch_async(dispatch_get_main_queue())
-                { afterTransformation(processedInfo) }
+                {
+                afterTransformation(ResponseInfo(response: processedAndTyped, isNew: true))
+                }
             }
         }
 
-    private func broadcastResponse(newInfo: ResponseInfo)
+    private func broadcastResponse(newInfo: ResponseInfo<T>)
         {
         if shouldIgnoreResponse(newInfo.response)
             { return }
@@ -347,7 +382,7 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
         responseCallbacks = []   // Fly, little handlers, be free!
         }
     
-    private func shouldIgnoreResponse(newResponse: Response) -> Bool
+    private func shouldIgnoreResponse<U>(newResponse: Response<U>) -> Bool
         {
         guard let responseInfo = responseInfo else
             { return false }
@@ -394,20 +429,20 @@ internal final class NetworkRequest: Request, CustomDebugStringConvertible
 
 
 /// For requests that failed before they even made it to the network layer
-internal final class FailedRequest: Request
+internal final class FailedRequest<T>: Request<T>
     {
     private let error: Error
     
     init(_ error: Error)
         { self.error = error }
     
-    func completion(callback: Response -> Void) -> Self
+    override func completion(callback: Response<T> -> Void) -> Self
         {
         dispatch_async(dispatch_get_main_queue(), { callback(.Failure(self.error)) })
         return self
         }
     
-    func failure(callback: Error -> Void) -> Self
+    override func failure(callback: Error -> Void) -> Self
         {
         dispatch_async(dispatch_get_main_queue(), { callback(self.error) })
         return self
@@ -415,11 +450,11 @@ internal final class FailedRequest: Request
     
     // Everything else is a noop
     
-    func success(callback: Entity -> Void) -> Self { return self }
-    func newData(callback: Entity -> Void) -> Self { return self }
-    func notModified(callback: Void -> Void) -> Self { return self }
+    override func success(callback: Entity<T> -> Void) -> Self { return self }
+    override func newData(callback: Entity<T> -> Void) -> Self { return self }
+    override func notModified(callback: Void -> Void) -> Self { return self }
     
-    func cancel() { }
+    override func cancel() { }
 
-    var completed: Bool { return true }
+    override var completed: Bool { return true }
     }

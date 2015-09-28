@@ -19,16 +19,16 @@ public protocol ResourceObserver
       Called when anything happens that might change the value of the reosurce’s `latestData`, `latestError`, or
       `loading` flag. The `event` explains the reason for the notification.
     */
-    func resourceChanged(resource: Resource, event: ResourceEvent)
+    func resourceChanged(resource: AnyResource, event: ResourceEvent)
     
     /// :nodoc:
-    func resourceRequestProgress(resource: Resource) // TODO: not implemented yet
+    func resourceRequestProgress(resource: AnyResource) // TODO: not implemented yet
     
     /**
       Called when this observer stops observering a resource. Use for making `removeObservers(ownedBy:)` trigger
       other cleanup.
     */
-    func stoppedObservingResource(resource: Resource)
+    func stoppedObservingResource(resource: AnyResource)
     
     /**
       Allows you to prevent redundant observers from being added to the same resource. If an existing observer
@@ -40,10 +40,10 @@ public protocol ResourceObserver
 public extension ResourceObserver
     {
     /// :nodoc:
-    func resourceRequestProgress(resource: Resource) { }
+    func resourceRequestProgress(resource: AnyResource) { }
 
     /// Does nothing.
-    func stoppedObservingResource(resource: Resource) { }
+    func stoppedObservingResource(resource: AnyResource) { }
     
     /// True iff self and other are (1) both objects and (2) are the _same_ object.
     func isEquivalentToObserver(other: ResourceObserver) -> Bool
@@ -55,13 +55,6 @@ public extension ResourceObserver
             { return false }
         }
     }
-
-/**
-  A closure alternative to `ResourceObserver`.
-  
-  See `Resource.addObserver(owner:closure:)`.
-*/
-public typealias ResourceObserverClosure = (resource: Resource, event: ResourceEvent) -> ()
 
 /**
   The possible causes of a call to `ResourceObserver.resourceChanged(_:event:)`.
@@ -139,6 +132,9 @@ public enum ResourceEvent: CustomStringConvertible
 
 public extension Resource
     {
+    public typealias ResourceObserverClosure = (resource: Resource<T>, event: ResourceEvent) -> ()
+
+    
     // MARK: - Observing Resources
 
     /**
@@ -180,7 +176,7 @@ public extension Resource
         var newEntry = ObserverEntry(observer: observer, resource: self)
         newEntry.addOwner(owner)
         observers.append(newEntry)
-        observer.resourceChanged(self, event: .ObserverAdded)
+        observer.resourceChanged(self as! AnyResource, event: .ObserverAdded)
         return self
         }
     
@@ -198,7 +194,7 @@ public extension Resource
     /**
       Removes all observers owned by the given object.
     */
-    @objc(removeObserversOwnedBy:)
+//    @objc(removeObserversOwnedBy:)
     public func removeObservers(ownedBy owner: AnyObject?)
         {
         guard let owner = owner else
@@ -247,9 +243,9 @@ public extension Resource
 
 // MARK: - Internals
 
-internal struct ObserverEntry: CustomStringConvertible
+internal struct ObserverEntry<T>: CustomStringConvertible
     {
-    private let resource: Resource  // keeps resource around as long as it has observers
+    private let resource: Resource<T>  // keeps resource around as long as it has observers
     
     private var observerRef: StrongOrWeakRef<ResourceObserver>  // strong iff there are external owners
     var observer: ResourceObserver?
@@ -258,7 +254,7 @@ internal struct ObserverEntry: CustomStringConvertible
     private var externalOwners = Set<WeakRef<AnyObject>>()
     private var observerIsOwner: Bool = false
 
-    init(observer: ResourceObserver, resource: Resource)
+    init(observer: ResourceObserver, resource: Resource<T>)
         {
         self.observerRef = StrongOrWeakRef<ResourceObserver>(observer)
         self.resource = resource
@@ -307,12 +303,13 @@ internal struct ObserverEntry: CustomStringConvertible
         }
     }
 
-private struct ClosureObserver: ResourceObserver
+private struct ClosureObserver<T>: ResourceObserver
     {
-    private let closure: ResourceObserverClosure
+    private let closure: (resource: Resource<T>, event: ResourceEvent) -> ()
     
-    func resourceChanged(resource: Resource, event: ResourceEvent)
+    func resourceChanged(resource: AnyResource, event: ResourceEvent)
         {
-        closure(resource: resource, event: event)
+        if let resource = resource as? Resource<T>  // TODO: ignore or error? This is impossible ... right?
+            { closure(resource: resource, event: event) }
         }
     }

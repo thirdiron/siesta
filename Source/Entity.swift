@@ -12,7 +12,7 @@
 
   Typically extracted from an HTTP message body.
 */
-public struct Entity
+public struct Entity<T>
     {
     /**
       The data itself. When constructed from an HTTP response, it begins its life as `NSData`, but may become any type
@@ -31,7 +31,15 @@ public struct Entity
       
       - SeeAlso: `Resource.contentAsType(ifNone: _:)`
     */
-    public var content: Any
+    public var content: T
+    
+    public func typecastContent<U>() -> Entity<U>?
+        {
+        guard let castContent = content as? U else
+            { return nil }
+        
+        return Entity(content: castContent, charset: charset, headers: headers, timestamp: timestamp)
+        }
     
     /**
       The type of data contained in the content.
@@ -63,7 +71,7 @@ public struct Entity
     public private(set) var timestamp: NSTimeInterval
     
     internal init(
-            content: Any,
+            content: T,
             charset: String? = nil,
             headers rawHeaders: [String:String],
             timestamp: NSTimeInterval? = nil)
@@ -84,7 +92,7 @@ public struct Entity
     /**
       Extracts data from a network response.
     */
-    public init(_ response: NSHTTPURLResponse?, _ content: Any)
+    public init(response: NSHTTPURLResponse?, content: T)
         {
         let headers = (response?.allHeaderFields ?? [:])
             .flatMapDict { ($0 as? String, $1 as? String) }
@@ -101,7 +109,7 @@ public struct Entity
       - SeeAlso: `Resource.localDataOverride(_:)`
     */
     public init(
-            content: Any,
+            content: T,
             contentType: String,
             charset: String? = nil,
             var headers: [String:String] = [:])
@@ -124,8 +132,10 @@ public struct Entity
     /// Updates `timestamp` to the current time.
     public mutating func touch()
         { timestamp = now() }
+    
+    public var untypedContent: Any
+        { return content }
     }
-
 
 /**
   Mixin that provides convenience accessors for the content of an optional contained entity.
@@ -154,8 +164,10 @@ public struct Entity
 */
 public protocol TypedContentAccessors
     {
+    typealias ContentType
+    
     /// The entity to which the convenience accessors will apply.
-    var entityForTypedContentAccessors: Entity? { get }
+    var entityForTypedContentAccessors: Entity<ContentType>? { get }
     }
 
 public extension TypedContentAccessors
@@ -194,17 +206,17 @@ public extension TypedContentAccessors
 extension Entity: TypedContentAccessors
     {
     /// Typed content accessors such as `.text` and `.jsonDict` apply to this entity’s content.
-    public var entityForTypedContentAccessors: Entity? { return self }
+    public var entityForTypedContentAccessors: Entity<T>? { return self }
     }
 
 extension Resource: TypedContentAccessors
     {
     /// Typed content accessors such as `.text` and `.jsonDict` apply to `latestData?.content`.
-    public var entityForTypedContentAccessors: Entity? { return latestData }
+    public var entityForTypedContentAccessors: Entity<T>? { return latestData }
     }
 
 extension Error: TypedContentAccessors
     {
     /// Typed content accessors such as `.text` and `.jsonDict` apply to `entity?.content`.
-    public var entityForTypedContentAccessors: Entity? { return entity }
+    public var entityForTypedContentAccessors: Entity<Any>? { return entity }
     }

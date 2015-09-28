@@ -18,16 +18,16 @@ public protocol ResponseTransformer
     /**
       Returns the parsed form of this response, or returns it unchanged if this transformer does not apply.
       
-      Note that a `Response` can contain either data or an error, so this method can turn success into failure if the
+      Note that a `Response<Any>` can contain either data or an error, so this method can turn success into failure if the
       response fails to parse.
     */
-    func process(response: Response) -> Response
+    func process(response: Response<Any>) -> Response<Any>
     }
 
 public extension ResponseTransformer
     {
     /// Helper to log a transformation. Call this in your custom transformer.
-    public func logTransformation(result: Response) -> Response
+    public func logTransformation(result: Response<Any>) -> Response<Any>
         {
         debugLog(.ResponseProcessing, [self, "→", result])
         return result
@@ -54,7 +54,7 @@ internal struct ContentTypeMatchTransformer: ResponseTransformer
         self.contentTypeMatcher = NSRegularExpression.compile(pattern)
         }
 
-    func process(response: Response) -> Response
+    func process(response: Response<Any>) -> Response<Any>
         {
         let contentType: String?
         switch response
@@ -128,7 +128,7 @@ public struct TransformerSequence
         }
 
     /// :nodoc:
-    func process(response: Response) -> Response
+    func process(response: Response<Any>) -> Response<Any>
         {
         return transformers.reduce(response)
             { $1.process($0) }
@@ -152,20 +152,20 @@ public protocol ResponseEntityTransformer: ResponseTransformer
       `processError(_:)` for information about what happens to this method’s return value when the underlying response
       is a failure.
     */
-    func processEntity(entity: Entity) -> Response
+    func processEntity(entity: Entity<Any>) -> Response<Any>
     
     /**
       Implementations typically do not override this method, but they can if they wish to apply special processing to
       errors. For example, an implementation might want to leave errors untouched, regardless of content type, and only
       apply processing on success.
     */
-    func processError(error: Error) -> Response
+    func processError(error: Error) -> Response<Any>
     }
 
 public extension ResponseEntityTransformer
     {
     /// :nodoc:
-    final func process(response: Response) -> Response
+    final func process(response: Response<Any>) -> Response<Any>
         {
         switch response
             {
@@ -178,12 +178,12 @@ public extension ResponseEntityTransformer
         }
     
     /// Returns success with the entity unchanged.
-    func processEntity(entity: Entity) -> Response
+    func processEntity(entity: Entity<Any>) -> Response<Any>
         { return .Success(entity) }
 
     /// Attempt to process error’s `content` entity using `processEntity(_:)`. If the processing succeeded, replace the
     /// content of the error. If there was a processing error, log it but preserve the original error.
-    func processError(var error: Error) -> Response
+    func processError(var error: Error) -> Response<Any>
         {
         if let errorData = error.entity
             {
@@ -205,9 +205,9 @@ public extension ResponseTransformer
     /// Utility method to downcast the given entity’s content, or return an error response if the content object is of
     /// the wrong type.
     func downcastContent<T>(
-            entity: Entity,
-            @noescape process: T -> Response)
-        -> Response
+            entity: Entity<Any>,
+            @noescape process: T -> Response<Any>)
+        -> Response<Any>
         {
         if let typedContent = entity.content as? T
             {
@@ -229,7 +229,7 @@ public extension ResponseTransformer
 public struct TextResponseTransformer: ResponseEntityTransformer
     {
     /// :nodoc:
-    public func processEntity(entity: Entity) -> Response
+    public func processEntity(entity: Entity<Any>) -> Response<Any>
         {
         if entity.content as? String != nil
             {
@@ -274,7 +274,7 @@ public struct TextResponseTransformer: ResponseEntityTransformer
 public struct JSONResponseTransformer: ResponseEntityTransformer
     {
     /// :nodoc:
-    public func processEntity(entity: Entity) -> Response
+    public func processEntity(entity: Entity<Any>) -> Response<Any>
         {
         return downcastContent(entity)
             {
@@ -299,7 +299,7 @@ public struct JSONResponseTransformer: ResponseEntityTransformer
 public struct ImageResponseTransformer: ResponseEntityTransformer
     {
     /// :nodoc:
-    public func processEntity(entity: Entity) -> Response
+    public func processEntity(entity: Entity<Any>) -> Response<Any>
         {
         return downcastContent(entity)
             {

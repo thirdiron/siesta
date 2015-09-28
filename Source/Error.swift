@@ -33,7 +33,7 @@ public struct Error
     public var httpStatusCode: Int?
     
     /// The response body if this error came from an HTTP response. Its meaning is API-specific.
-    public var entity: Entity?
+    public var entity: Entity<Any>?
     
     /// Diagnostic information if the error originated or was reported locally.
     public var nsError: NSError?
@@ -57,7 +57,7 @@ public struct Error
         self.nsError = error
         
         if let content = content
-            { self.entity = Entity(response, content) }
+            { self.entity = Entity(response: response, content: content) }
         
         if let message = userMessage
             { self.userMessage = message }
@@ -75,7 +75,7 @@ public struct Error
     public init(
             userMessage: String,
             error: NSError? = nil,
-            entity: Entity? = nil)
+            entity: Entity<Any>? = nil)
         {
         self.userMessage = userMessage
         self.nsError = error
@@ -89,7 +89,7 @@ public struct Error
     public init(
             userMessage: String,
             debugMessage: String,
-            entity: Entity? = nil)
+            entity: Entity<Any>? = nil)
         {
         let nserror = NSError(domain: "Siesta", code: -1, userInfo: [NSLocalizedDescriptionKey: debugMessage])
         self.init(userMessage: userMessage, error: nserror, entity: entity)

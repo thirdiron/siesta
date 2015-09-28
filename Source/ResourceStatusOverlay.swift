@@ -27,7 +27,7 @@ public class ResourceStatusOverlay: UIView, ResourceObserver
     @IBOutlet public var errorDetail: UILabel?
     weak var parentVC: UIViewController?
     
-    private var observedResources = [Resource]()
+    private var observedResources = [AnyResource]()
     
     override init(frame: CGRect)
         { super.init(frame: frame) }
@@ -106,7 +106,7 @@ public class ResourceStatusOverlay: UIView, ResourceObserver
             }
         }
     
-    public func resourceChanged(resource: Resource, event: ResourceEvent)
+    public func resourceChanged<T>(resource: Resource<T>, event: ResourceEvent)
         {
         if case .ObserverAdded = event
             { observedResources.append(resource) }
@@ -130,7 +130,7 @@ public class ResourceStatusOverlay: UIView, ResourceObserver
         showSuccess()
         }
 
-    public func stoppedObservingResource(resource: Resource)
+    public func stoppedObservingResource<T>(resource: Resource<T>)
         {
         observedResources = observedResources.filter { $0 !== resource }
         }

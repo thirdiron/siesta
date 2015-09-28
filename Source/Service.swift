@@ -20,7 +20,7 @@ public class Service: NSObject
     public let baseURL: NSURL?
     
     internal let networkingProvider: NetworkingProvider
-    private var resourceCache = WeakCache<String,Resource>()
+    private var resourceCache = WeakCache<String,AnyResource>()
     
     /**
       Creates a new service for the given API.
@@ -78,10 +78,10 @@ public class Service: NSObject
       If the given resource is nil (likely indicating that it came from a malformed URL string), this method _does_
       return a resource — but that resource will give errors for all requests without touching the network.
     */
-    @objc(resourceWithURL:)
-    public final func resource(url url: NSURL?) -> Resource
+//    @objc(resourceWithURL:)
+    public final func resource<T>(url url: NSURL?) -> Resource<T>
         {
-        let key = url?.absoluteString ?? ""
+        let key = (url?.absoluteString ?? "") + "\0\(T.self)"
         return resourceCache.get(key)
             {
             Resource(service: self, url: url ?? Service.invalidURL)
@@ -89,8 +89,8 @@ public class Service: NSObject
         }
 
     /// Convenience to parse a URL and return its resource.
-    @objc(resourceWithURLString:)
-    public final func resource(url urlString: String?) -> Resource
+//    @objc(resourceWithURLString:)
+    public final func resource<T>(url urlString: String?) -> Resource<T>
         {
         // TODO: consider returning nil if url is nil (and use invalidURL only for URL parse errors)
         if let urlString = urlString, let nsurl = NSURL(string: urlString)
@@ -107,8 +107,8 @@ public class Service: NSObject
     
     /// Return the unique resource with the given path appended to `baseURL`.
     /// Leading slash is optional, and has no effect.
-    @objc(resourceWithPath:)
-    public final func resource(path: String) -> Resource
+//    @objc(resourceWithPath:)
+    public final func resource<T>(path: String) -> Resource<T>
         {
         return resource(url:
             baseURL?.URLByAppendingPathComponent(path.stripPrefix("/")))
@@ -152,7 +152,7 @@ public class Service: NSObject
       on the resource because `Resource` instances may be discarded and recreated when they are not in use.
     */
     public final func configure(
-            resource: Resource,
+            resource: AnyResource,
             description: String? = nil,
             configurer: Configuration.Builder -> Void)
         {
@@ -279,7 +279,7 @@ public class Service: NSObject
 
     private var anyConfigSinceLastInvalidation = false
     
-    internal func configurationForResource(resource: Resource) -> Configuration
+    internal func configurationForResource(resource: AnyResource) -> Configuration
         {
         anyConfigSinceLastInvalidation = true
         debugLog(.Configuration, ["Computing configuration for", resource])
@@ -307,7 +307,7 @@ public class Service: NSObject
       
       Applies to resources matching the predicate, or all resources by default.
     */
-    public final func wipeResources(predicate: Resource -> Bool =  { _ in true })
+    public final func wipeResources(predicate: AnyResource -> Bool =  { _ in true })
         {
         resourceCache.flushUnused()
         for resource in resourceCache.values
@@ -324,7 +324,7 @@ public class Service: NSObject
     */
     public final func wipeResourcesMatchingURL(predicate: NSURL -> Bool)
         {
-        wipeResources { (res: Resource) in predicate(res.url) }
+        wipeResources { predicate($0.url) }
         }
     }
 
